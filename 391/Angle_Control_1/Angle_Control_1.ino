@@ -1,7 +1,7 @@
 // Angle control. Motor shaft rotates the specified angle given the desiredCount value. Need to implement the correct angle calculation
 // to correctly get desiredCount value from given Angle
 
-#define E1 3                         // PWM generator
+#define E1 6                         // PWM generator
 #define CLOCKWISE            0       // direction constant
 #define COUNTER_CLOCKWISE    1       // direction constant
 

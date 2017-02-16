@@ -1,4 +1,4 @@
-// 3rd interation of Angle Control with 4X Encoding. Implementing the PID library to control angular motion
+// Working 4X Encoding. Testing out Non-official PID library to constrain PWM values.
 
 #include <digitalWriteFast.h>  // library for high performance reads and writes by jrraines
                                // see http://www.arduino.cc/cgi-bin/yabb2/YaBB.pl?num=1267553811/0
@@ -7,19 +7,22 @@
 // It turns out that the regular digitalRead() calls are too slow and bring the arduino down when
 // I use them in the interrupt routines while the motor runs at full speed.
 
-#include <PID_v1.h>            // Arduino PID library
-
 // Quadrature encoders
-//  encoder
+// Encoder reading is actually from the cover/label side of encoder so we 
+// reverse it in the physical system (instead of pin 2 for Channel A, Channel A connects to Arduino pin 3)
+// Channel A is Green Wire | Channel B is Yellow Wire
+// Green to pin 3 | Yellow to pin 2
+
 #define c_EncoderInterruptA 0
 #define c_EncoderInterruptB 1
-#define c_EncoderPinA 2       // Channel A to pin 2
-#define c_EncoderPinB 3       // Channel B to pin 3
+#define c_EncoderPinA 2 
+#define c_EncoderPinB 3
 #define EncoderIsReversed
 
-#define E1 6                         // PWM generator
+#define PWM1 6                         // PWM generator
 #define CLOCKWISE            0       // direction constant
 #define COUNTER_CLOCKWISE    1       // direction constant
+#define LOOPTIME        100          // PID loop time
 
 volatile bool _EncoderASet;
 volatile bool _EncoderBSet;
@@ -37,14 +40,12 @@ double cycle = 360.0;
 
 // PID Control
 //Define Variables we'll be connecting to
-double Setpoint, Input, Output; // Setpoint = desiredCount; Input = _Encoderticks; Output = Output; 
-double lowGap = 50; // within 45 degrees error
-
-//Define the aggressive and conservative Tuning Parameters
-double aggKp=4, aggKi=0.2, aggKd=1;
-double consKp=1, consKi=0.05, consKd=0.25;
-
-PID myPID(&Input, &Output, &Setpoint, consKp, consKi, consKd, DIRECT); 
+int Setpoint, Input, Output; // Setpoint = desiredCount; Input = _Encoderticks; Output = Output; 
+unsigned long lastMilli = 0;                    // loop timing 
+unsigned long lastMilliPrint = 0;               // loop timing
+int PWM_val = 0;
+float Kd = 1;                                // PID Derivitave control gain
+float Kp = 0;                                // PID proportional control Gain
 
 void setup()
 {
@@ -59,90 +60,46 @@ void setup()
   attachInterrupt(c_EncoderInterruptA, HandleMotorInterruptA, CHANGE);
   attachInterrupt(c_EncoderInterruptB, HandleMotorInterruptB, CHANGE);
 
-  pinMode(E1, OUTPUT);
-  myPID.SetMode(AUTOMATIC);
-
+  pinMode(PWM1, OUTPUT);
+  
   desiredCount = int(desiredAngle * (encoderCount/cycle));
-  Setpoint = double(desiredCount);
+  Setpoint = int(desiredCount);
 }
 
 void loop() {  
-//      desiredCount = int(desiredAngle * (encoderCount/cycle));
-//      
-//      if (desiredCount <= -1) // If it is moving in a CCW direction
-//      { 
-//        while(_EncoderTicks >= desiredCount) { // Run motor until desiredCount is reached
-//          analogWrite(E1, 120); // Turn on motor in CCW direction
-//        }
-//      }
-//      else if (desiredCount >= 1) // If it is moving in a CW direction
-//      {
-//        while (_EncoderTicks <= desiredCount) { // Run motor until desiredCount is reached
-//          analogWrite(E1, 140); // Turn on motor in CW direction
-//        }
-//      }
-//      else if (desiredCount == 0){
-//        analogWrite (E1, 127); // Motor Stop
-//      }
-//      else {
-//        analogWrite(E1, 127);
-//      }
-//      
-//      _EncoderTicks = 0;
-//      desiredCount = 0;
-    Input = double(_EncoderTicks);  //casting as doubles as done in examples
-    
-    // Adaptive Tuning
-    double gap = abs(Setpoint-Input); //distance away from setpoint
-    if(gap < lowGap) // if within 45 degrees (50 encoder ticks) away
-    {  //we're close to setpoint, use conservative tuning parameters
-      myPID.SetTunings(consKp, consKi, consKd);
-    }
-    else
-    {
-       //we're far from setpoint, use aggressive tuning parameters
-       myPID.SetTunings(aggKp, aggKi, aggKd);
-    }
-  
-    myPID.Compute();
-    analogWrite(E1, Output);
+    Input = int(_EncoderTicks);  
 
-
-//    PIDout = Output;
-//    PIDout = PIDout / 1000;
-//
-//    if (PIDout >= 127) {
-//      PIDout = 127;
-//    }
-//    if (PIDout <= -126) {
-//      PIDout = -126;
-//    }
-//    PWMout = PIDout + 127;
-//    analogWrite(E1, PWMout);
+    if((millis()-lastMilli) >= LOOPTIME)   {                                     // enter tmed loop
+       lastMilli = millis();
+       PWM_val= updatePid(PWM_val, Setpoint, Input);                     // compute PWM value
+       analogWrite(PWM1, PWM_val);                                               // send PWM to motor
+    }
     
-    Serial.print("Encoder Ticks: ");
-    Serial.print(_EncoderTicks);
-    Serial.print("  Revolutions: ");
-    Serial.print(_EncoderTicks/400.0);//400 Counts Per Revolution
-    Serial.println (Direc == CLOCKWISE ? " clockwise " : " counter-clockwise ");
-    Serial.print("\n");
+      Serial.print("Encoder Ticks: ");
+      Serial.print(_EncoderTicks);
+      Serial.print("  Revolutions: ");
+      Serial.print(_EncoderTicks/400);//400 Counts Per Revolution
+      Serial.println (Direc == CLOCKWISE ? " clockwise " : " counter-clockwise ");
+      Serial.print("\n");
 }
 
-
-// ------------------------- Interrupts ------------------------ //
-
+int updatePid(int command, int targetValue, int currentValue)   {             // compute PWM value
+  float pidTerm = 0;                                                            // PID correction
+  int error=0;                                  
+  static int last_error=0;                             
+   error = abs(targetValue) - abs(currentValue); 
+   pidTerm = (Kp * error) + (Kd * (error - last_error));                            
+   last_error = error;
+   return constrain(command + int(pidTerm), 0, 255);
+}
 
 // Interrupt service routines for Channel A Rising/Falling edge
-
 void HandleMotorInterruptA(){
-  // Reading both Channel A and B - get 0 or 5V
   _EncoderBSet = digitalReadFast(c_EncoderPinB);
   _EncoderASet = digitalReadFast(c_EncoderPinA);
-
-  // Depending on the orientation of A and B (0 or 5V), add to or subtract from EncoderTicks
+  
   _EncoderTicks+=ParseEncoder();
-
-  // Remember the previous encoder orientation (0 or 5V) to compare in ParseEncoder()
+  
   _EncoderAPrev = _EncoderASet;
   _EncoderBPrev = _EncoderBSet;
 }
@@ -198,3 +155,30 @@ int ParseEncoder(){
     }
   }
 }
+
+// Angle movement testing
+
+//      desiredCount = int (desiredAngle * (encoderCount/cycle));
+//      
+//      if (desiredCount <= -1) // If it is moving in a CCW direction
+//      { 
+//        while(_EncoderTicks >= desiredCount) { // Run motor until desiredCount is reached
+//          analogWrite(E1, 120); // Turn on motor in CCW direction
+//        }
+//      }
+//      else if (desiredCount >= 1) // If it is moving in a CW direction
+//      {
+//        while (_EncoderTicks <= desiredCount) { // Run motor until desiredCount is reached
+//          analogWrite(E1, 140); // Turn on motor in CW direction
+//        }
+//      }
+//      else if (desiredCount == 0){
+//        analogWrite (E1, 127); // Motor Stop
+//      }
+//      else {
+//        analogWrite(E1, 127);
+//      }
+//      
+//      _EncoderTicks = 0;
+//      desiredCount = 0;
+//      
