@@ -39,10 +39,6 @@ int PWMout = 0; // output PWM value to the motor
 
 // Kinematics variables
 double arcLength = 0;           // position of the handle [m]
-double last_arcLength = 0;     //last x position of the handle
-double velocity = 0;         //velocity of the handle
-double lastVelocity = 0;     //last velocity of the handle
-double lastLastVelocity = 0; //last last velocity of the handle
 
 // Force output variables
 double force = 0;           // force at the handle
@@ -72,22 +68,26 @@ void setup()
 // --------------------------------------------------------------
 void loop()
 {
-  double radius = 0.09; // meters
+  double radius = 0.065; // meters
   actualAngle = double(_EncoderTicks * (cycle/encoderCount)); // calculate the actual angle based on the present encoderticks
   arcLength = 2 * 3.14159 * radius * (actualAngle/cycle);  // finding the arclength based on a ratio (from degrees) of the circumference
 
+// VIRTUAL SPRING
+//double k_spring = 230; //[N/m] 230
+//force = -k_spring*arcLength;
+
 // VIRTUAL WALL
-     double x_wall = 0.14;
-     double k_wall = 1000;
+     double x_wall = 0.1;
+     double k_wall = 1500;
      if(arcLength > x_wall) {
-       // force = -k_wall*(arcLength-x_wall);
-       force = -20;
+       force = -k_wall*(arcLength-x_wall);
+       // force = -30;
      } else {
        force = 0;
      }
      // Torque = radius * force;    // Compute the Torque to generate the desired force
   
-  // Compute the duty cycle required to generate Tp (torque at the motor pulley)
+  // Compute the duty cycle required to generate the torque
   // duty = sqrt(abs(Torque)/2.0);
 
   // Make sure the duty cycle is between 0 and 100%
@@ -98,29 +98,29 @@ void loop()
 //  }  
 
   output = abs(force);  
-//  output = (int)(duty * 127);   // convert duty cycle to output signal: DUTY 0 - 100%|0 - 127 PWM
+  // output = (int)(duty * 127);   // convert duty cycle to output signal: DUTY 0 - 100%|0 - 127 PWM
   if (force < 0 ) {
     PWMout = output + 127; // max output (127) -> PWMout = 254 (max PWM CCW)
   } else {
     PWMout = (-1 * output) + 127; // max output (127) -> PWMout = 0 (max PWM CW)
   }
 
-//  if (PWMout >= 120 && PWMout <= 126){ // when the pwm value gets too close to 127, it doesn't move
-//    PWMout = 120;
-//  }
-//  if (PWMout >= 128 && PWMout <= 135){
-//    PWMout = 135;
-//  }
+  if (PWMout >= 120 && PWMout <= 126){ // when the pwm value gets too close to 127, it doesn't move
+    PWMout = 120;
+  }
+  if (PWMout >= 128 && PWMout <= 135){
+    PWMout = 135;
+  }
 
   analogWrite(PWM1,PWMout);  // output the signal
   
   Serial.print(" A: ");
   Serial.print(actualAngle);
-  Serial.print(" E: ");
-  Serial.print(_EncoderTicks);
+  // Serial.print(" E: ");
+  // Serial.print(_EncoderTicks);
   // Serial.print("  Revs: ");
   // Serial.print(_EncoderTicks/400);//400 Counts Per Revolution
-  Serial.print(Direc == CLOCKWISE ? " cw " : " ccw ");
+  // Serial.print(Direc == CLOCKWISE ? " cw " : " ccw ");
   Serial.print(" arc: ");
   Serial.print(arcLength);
   Serial.print(" F: ");
