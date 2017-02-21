@@ -20,7 +20,8 @@
 #define c_EncoderPinB 3
 #define EncoderIsReversed
 
-#define PWM1 6                       // PWM generator
+#define EN 8 
+#define PWM1 6                      // PWM generator
 #define CLOCKWISE            0       // direction constant
 #define COUNTER_CLOCKWISE    1       // direction constant
 
@@ -45,7 +46,7 @@ double lastLastVelocity = 0; //last last velocity of the handle
 
 // Force output variables
 double force = 0;           // force at the handle
-double Torque = 0;              // torque of the motor pulley
+double Torque = 0;              // torque of the motor
 double duty = 0;            // duty cylce (between 0 and 255)
 unsigned int output = 0;    // output command to the motor
 
@@ -58,10 +59,12 @@ void setup()
   pinMode(c_EncoderPinB, INPUT);      // sets pin B as input
   digitalWrite(c_EncoderPinB, LOW);  // turn on pullup resistors
   attachInterrupt(c_EncoderInterruptA, HandleMotorInterruptA, CHANGE);
-  attachInterrupt(c_EncoderInterruptB, HandleMotorInterruptB, CHANGE)
+  attachInterrupt(c_EncoderInterruptB, HandleMotorInterruptB, CHANGE);
 
   pinMode(PWM1, OUTPUT);
-  analogWrite(PWM1, 127);
+//  analogWrite(PWM1, 127);
+//  pinMode(EN, OUTPUT);
+//  digitalWrite(EN, LOW);
 }
 
 // --------------------------------------------------------------
@@ -73,81 +76,63 @@ void loop()
   actualAngle = double(_EncoderTicks * (cycle/encoderCount)); // calculate the actual angle based on the present encoderticks
   arcLength = 2 * 3.14159 * radius * (actualAngle/cycle);  // finding the arclength based on a ratio (from degrees) of the circumference
 
-  velocity = -(.95*.95)*lastLastVelocity + 2*.95*lastVelocity + (1-.95)*(1-.95)*(arcLength-last_arcLength)/.0001;  // filtered velocity (2nd-order filter)
-  last_arcLength = arcLength;
-  lastLastVelocity = lastVelocity;
-  lastVelocity = velocity;
-
-  //*************************************************************
-  //*** Section 3. Assign a motor output force in Newtons *******  
-  //*************************************************************
-  // Step 3.1: 
-     //force = -0.5; // In lab 3, you will generate a force by simply assigning this to a constant number (in Newtons)
-  // Lab 4 Step 1.4: render a VIRTUAL SPRING
-     //double k_spring = 30; //[N/m]
-     //force = -k_spring*xh;
-  // Lab 4 Step 2.4: render a VIRTUAL DAMPER
-     //double b_damper = 0.35; 
-     //force = -b_damper*vh;
-  // Lab 4 Step 3.3: render a VIRTUAL TEXTURE using the damping approach (there is a more clever way to do this)
-//     double w = .005;  //width of damping area
-//     double b_damper = 0.5;
-//     for(int i=0; i<9; i=i+2){
-//       if((abs(xh)>i*w)&&(abs(xh)<(i+1)*w)){
-//         force = -b_damper*vh;
-//       } else if((abs(xh)>(i+1)*w)&&(abs(xh)<(i+2)*w)){
-//         force = 0;
-//       }
-//     }
 // VIRTUAL WALL
-     double x_wall = .05;
-     double k_wall = 400;
+     double x_wall = 0.14;
+     double k_wall = 1000;
      if(arcLength > x_wall) {
-       force = -k_wall*(arcLength-x_wall);
+       // force = -k_wall*(arcLength-x_wall);
+       force = -20;
      } else {
        force = 0;
      }
-     Torque = radius * force;    // Compute the Torque to generate the desired force
+     // Torque = radius * force;    // Compute the Torque to generate the desired force
   
   // Compute the duty cycle required to generate Tp (torque at the motor pulley)
-  duty = sqrt(abs(Torque)/0.03);
+  // duty = sqrt(abs(Torque)/2.0);
 
   // Make sure the duty cycle is between 0 and 100%
-  if (duty > 1) {            
-    duty = 1;
-  } else if (duty < 0) { 
-    duty = 0;
-  }  
-  output = (int)(duty * 127);   // convert duty cycle to output signal: DUTY 0 - 100%|0 - 127 PWM
+//  if (duty > 1) {            
+//    duty = 1;
+//  } else if (duty < 0) { 
+//    duty = 0;
+//  }  
+
+  output = abs(force);  
+//  output = (int)(duty * 127);   // convert duty cycle to output signal: DUTY 0 - 100%|0 - 127 PWM
   if (force < 0 ) {
     PWMout = output + 127; // max output (127) -> PWMout = 254 (max PWM CCW)
   } else {
-    PWMout = (-1 * output) + 127); // max output (127) -> PWMout = 0 (max PWM CW)
+    PWMout = (-1 * output) + 127; // max output (127) -> PWMout = 0 (max PWM CW)
   }
 
-  if (PWMout >= 120 && PWMout <= 126) // when the pwm value gets too close to 127, it doesn't move
-    PWMout = 120;
-  if (PWMout >= 128 && PWMout <= 135)
-    PWMout = 135;
-    
-  analogWrite(PWM1,PWMout);  // output the signal
+//  if (PWMout >= 120 && PWMout <= 126){ // when the pwm value gets too close to 127, it doesn't move
+//    PWMout = 120;
+//  }
+//  if (PWMout >= 128 && PWMout <= 135){
+//    PWMout = 135;
+//  }
 
+  analogWrite(PWM1,PWMout);  // output the signal
+  
   Serial.print(" A: ");
   Serial.print(actualAngle);
   Serial.print(" E: ");
   Serial.print(_EncoderTicks);
   // Serial.print("  Revs: ");
   // Serial.print(_EncoderTicks/400);//400 Counts Per Revolution
-  Serial.println (Direc == CLOCKWISE ? " cw " : " ccw ");
+  Serial.print(Direc == CLOCKWISE ? " cw " : " ccw ");
   Serial.print(" arc: ");
   Serial.print(arcLength);
   Serial.print(" F: ");
   Serial.print(force);
+  Serial.print(" T: ");
+  Serial.print(Torque);
   Serial.print(" D: ");
   Serial.print(duty);
+  Serial.print(" P: ");
+  Serial.print(PWMout);  
   Serial.print("\n");
 }
-
 
 // ------------------- INTERRUPT FUNCTIONS ------------------------ // 
 
