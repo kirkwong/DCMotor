@@ -73,18 +73,18 @@ void loop()
   arcLength = 2 * 3.14159 * radius * (actualAngle/cycle);  // finding the arclength based on a ratio (from degrees) of the circumference
 
 // MIMIC SPRING
-double k_spring = 130; //[N/m] 230
-force = -k_spring*arcLength;
+//double k_spring = 230; //[N/m] 
+//force = -k_spring*arcLength;
 
 // MIMIC WALL
-//     double x_wall = 0.1;
-//     double k_wall = 1500; 
-//     if(arcLength > x_wall) {
-//       force = -k_wall*(arcLength-x_wall);
-//       // force = -30;
-//     } else {
-//       force = 0;
-//     }
+     double x_wall = 0.1;
+     double k_wall = 5000; // 1500
+     if(arcLength > x_wall) {
+       force = -k_wall*(arcLength-x_wall);
+       // force = -30;
+     } else {
+       force = 0;
+     }
 
   output = abs(force);  
   if (force < 0 ) {
@@ -93,12 +93,12 @@ force = -k_spring*arcLength;
     PWMout = (-1 * output) + 127; // max output (127) -> PWMout = 0 (max PWM CW)
   }
 
-  if (PWMout >= 120 && PWMout <= 126){ // when the pwm value gets too close to 127, it doesn't move
-    PWMout = 120;
-  }
-  if (PWMout >= 128 && PWMout <= 135){
-    PWMout = 135;
-  }
+//  if (PWMout >= 120 && PWMout <= 126){ // when the pwm value gets too close to 127, it doesn't move
+//    PWMout = 120;
+//  }
+//  if (PWMout >= 128 && PWMout <= 135){
+//    PWMout = 135;
+//  }
 
   analogWrite(PWM1,PWMout);  // output the signal
   
